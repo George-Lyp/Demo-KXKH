@@ -45,8 +45,11 @@ TagManager:
     uniqueID: 717940107
     locked: 0
   - name: Middle
-    uniqueID: 1250469079
+    uniqueID: 975501715
     locked: 0
   - name: Front
-    uniqueID: 422780679
+    uniqueID: 366567599
+    locked: 0
+  - name: Player
+    uniqueID: 932516441
     locked: 0
