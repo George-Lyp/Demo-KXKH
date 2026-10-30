@@ -1,0 +1,21 @@
+Permissions:
+
+You may use this asset pack in personal and commercial projects.
+
+You may modify, edit, and combine these assets with other resources.
+
+No royalties or additional payments are required (credit is appreciated but not mandatory).
+
+Restrictions:
+
+You may not sell, redistribute, or publish this asset pack as your own, whether in its original form or with minimal changes.
+
+You may not use these assets to train artificial intelligence (AI) models or include them in AI datasets.
+
+You may not include these assets in other asset packs, free or paid.
+
+Notes:
+
+This asset pack can be used in engines such as Godot, Unity, Unreal, and similar.
+
+The purchaser is responsible for ensuring their project complies with the restrictions above.
