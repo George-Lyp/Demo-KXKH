@@ -557,7 +557,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   inputDirection: {x: 0, y: 0}
-  speed: 290
+  speed: 6
   jumpForce: 16.5
 --- !u!114 &110301822
 MonoBehaviour:
