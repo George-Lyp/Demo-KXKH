@@ -38,7 +38,7 @@ using UnityEngine.SceneManagement;
 [InitializeOnLoad]
 public static class DevBridge
 {
-    const int Port = 7777;
+    const int Port = 7788;
     const string PrefKey = "DevBridge.Enabled";
 
     static TcpListener listener;
@@ -407,7 +407,7 @@ public static class DevBridge
             case SerializedPropertyType.Color:
                 return J(ColorUtility.ToHtmlStringRGBA(p.colorValue));
             case SerializedPropertyType.LayerMask:
-                return p.intValue.ToString(CultureInfo.InvariantCulture) + " (" + J(LayerMask.LayerToName(p.intValue)) + ")";
+                return J(p.intValue.ToString(CultureInfo.InvariantCulture) + " (" + LayerMask.LayerToName(p.intValue) + ")");
             case SerializedPropertyType.Rect:
                 return "[" + F(p.rectValue.x) + "," + F(p.rectValue.y) + "," + F(p.rectValue.width) + "," + F(p.rectValue.height) + "]";
             default:
@@ -456,7 +456,7 @@ public static class DevBridge
                 AnimationClip[] clips = an.runtimeAnimatorController.animationClips;
                 for (int i = 0; i < clips.Length; i++)
                 {
-                    if (clips[i] != null && clips[i].name.GetHashCode() == hash)
+                    if (clips[i] != null && Animator.StringToHash(clips[i].name) == hash)
                     { stateName = clips[i].name; break; }
                 }
             }
@@ -533,7 +533,7 @@ public static class DevBridge
                 fs.Seek(len - take, SeekOrigin.Begin);
                 byte[] buf = new byte[take];
                 fs.Read(buf, 0, take);
-                string all = Encoding.UTF8.GetString(buf);
+                string all = Encoding.UTF8.GetString(buf).Replace("\0", "");
                 string[] lines = all.Split('\n');
                 int start = Math.Max(0, lines.Length - n);
                 StringBuilder sb = new StringBuilder();
