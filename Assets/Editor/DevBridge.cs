@@ -38,12 +38,20 @@ using UnityEngine.SceneManagement;
 [InitializeOnLoad]
 public static class DevBridge
 {
-    const int Port = 7788;
+    // 0 = 让操作系统分配一个空闲端口。
+    // 固定端口会被「上一次没退干净的 Unity 进程」永久占住（AddressAlreadyInUse），
+    // 而系统分配的端口永远不会冲突。实际端口会写到 Library/DevBridge.port 供外部读取。
+    const int Port = 0;
+    static int actualPort;
     const string PrefKey = "DevBridge.Enabled";
+
+    const string BridgeVersion = "2026-11-02c";
 
     static TcpListener listener;
     static Thread thread;
     static volatile bool running;
+    static volatile string lastError = "";
+    static volatile bool editorBusy;   // 主线程在 Pump() 里写入，后台线程只读
     static readonly ConcurrentQueue<Pending> queue = new ConcurrentQueue<Pending>();
 
     class Pending
@@ -59,6 +67,10 @@ public static class DevBridge
     static DevBridge()
     {
         EditorApplication.update += Pump;
+        // 关键：域重载前必须把 socket 关掉。
+        // 否则每次脚本重编译都会留下一个没人 accept 的监听，端口被占死。
+        AssemblyReloadEvents.beforeAssemblyReload += Shutdown;
+        EditorApplication.quitting += Shutdown;
         if (EditorPrefs.GetBool(PrefKey, false))
             EditorApplication.delayCall += Start;
     }
@@ -68,22 +80,42 @@ public static class DevBridge
     [MenuItem("Tools/DevBridge/Start", false, 1)]
     static void Start()
     {
-        if (running) { Debug.Log("[DevBridge] 已在运行：http://127.0.0.1:" + Port); return; }
+        if (running && listener != null) { Debug.Log("[DevBridge] 已在运行：http://127.0.0.1:" + actualPort); return; }
+
+        Shutdown();   // 先把上一次的 socket 关干净，避免同一端口被重复绑定
         try
         {
             listener = new TcpListener(IPAddress.Loopback, Port);
-            listener.Server.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
-            listener.Start();
+            // 绝对不要设置 SocketOptionName.ReuseAddress。
+            // Windows 下它允许两个 socket 同时绑同一端口；后来的那个会把新连接抢走却没人 accept，
+            // 表现就是 netstat 里 LISTENING 但 curl 永远超时（连接停在 CLOSE_WAIT）。
+            listener.Server.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.NoDelay, true);
+            listener.Start(16);
+            actualPort = ((IPEndPoint)listener.LocalEndpoint).Port;
             running = true;
             EditorPrefs.SetBool(PrefKey, true);
+            WritePortFile(actualPort);
 
             thread = new Thread(Loop) { IsBackground = true, Name = "DevBridge" };
             thread.Start();
-            Debug.Log("[DevBridge] 已启动 http://127.0.0.1:" + Port + "  （curl.exe --noproxy \"*\" http://127.0.0.1:" + Port + "/ping）");
+            Debug.Log("[DevBridge] 已启动 http://127.0.0.1:" + actualPort +
+                "  端口已写入 Library/DevBridge.port  （curl.exe --noproxy \"*\" http://127.0.0.1:" + actualPort + "/ping）");
+        }
+        catch (SocketException se)
+        {
+            running = false;
+            lastError = se.SocketErrorCode + ": " + se.Message;
+            try { if (listener != null) listener.Stop(); } catch { }
+            listener = null;
+            Debug.LogError("[DevBridge] 绑定端口失败（" + se.SocketErrorCode + "）：" + se.Message +
+                "  当前用系统分配端口（Port=0），正常不会冲突；若仍失败，检查是否有第二个 Unity 实例在跑同一个工程。");
         }
         catch (Exception e)
         {
             running = false;
+            lastError = e.GetType().Name + ": " + e.Message;
+            try { if (listener != null) listener.Stop(); } catch { }
+            listener = null;
             Debug.LogError("[DevBridge] 启动失败：" + e.Message);
         }
     }
@@ -91,11 +123,52 @@ public static class DevBridge
     [MenuItem("Tools/DevBridge/Stop", false, 2)]
     static void Stop()
     {
-        running = false;
-        try { if (listener != null) listener.Stop(); } catch { }
-        listener = null;
+        Shutdown();
         EditorPrefs.SetBool(PrefKey, false);
         Debug.Log("[DevBridge] 已停止");
+    }
+
+    // 只关 socket，不动 EditorPrefs：域重载 / 退出编辑器时用这个，否则下次不会自动启动
+    static void Shutdown()
+    {
+        running = false;
+
+        try { if (listener != null) listener.Stop(); } catch { }
+        listener = null;
+
+        Thread t = thread;
+        thread = null;
+        if (t != null) { try { t.Join(300); } catch { } }
+
+        // 把还在等主线程的请求统统放行，避免它们干等到超时
+        Pending p;
+        while (queue.TryDequeue(out p)) { try { p.Done.Set(); } catch { } }
+
+        DeletePortFile();
+    }
+
+    // ------------------------------------------------ 端口文件
+
+    static string PortFilePath
+    {
+        get { return Path.GetFullPath(Path.Combine(Application.dataPath, "..", "Library", "DevBridge.port")); }
+    }
+
+    static void WritePortFile(int port)
+    {
+        try
+        {
+            string p = PortFilePath;
+            string dir = Path.GetDirectoryName(p);
+            if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir)) Directory.CreateDirectory(dir);
+            File.WriteAllText(p, port.ToString(CultureInfo.InvariantCulture));
+        }
+        catch (Exception e) { Debug.LogWarning("[DevBridge] 写端口文件失败：" + e.Message); }
+    }
+
+    static void DeletePortFile()
+    {
+        try { string p = PortFilePath; if (File.Exists(p)) File.Delete(p); } catch { }
     }
 
     static void Loop()
@@ -104,11 +177,16 @@ public static class DevBridge
         {
             TcpClient client;
             try { client = listener.AcceptTcpClient(); }
-            catch { break; }
+            catch (ObjectDisposedException) { break; }                    // Shutdown() 关掉了 listener
+            catch (SocketException) { if (!running) break; Thread.Sleep(50); continue; }
+            catch (Exception) { break; }
+
+            if (!running) { try { client.Close(); } catch { } break; }
 
             try { Handle(client); }
             catch (Exception e) { try { client.Close(); } catch { } Debug.LogWarning("[DevBridge] " + e.Message); }
         }
+        running = false;
     }
 
     static void Handle(TcpClient client)
@@ -131,9 +209,17 @@ public static class DevBridge
             Pending p = new Pending { Method = first[0], Path = path, Query = query };
             queue.Enqueue(p);
 
-            if (!p.Done.Wait(8000))
+            // 这里绝对不能直接读 EditorApplication.isCompiling / isUpdating：
+            // 它们是主线程专属 API，后台线程一调就抛 "can only be called from the main thread"，
+            // 异常被 Loop 的 catch 吞掉 -> 连接被直接关闭 -> curl 收到空响应（exit 52）。
+            // 主线程已经在 Pump() 里把状态写进 editorBusy，这里读标志即可。
+            bool busy = editorBusy;
+            int waitMs = busy ? 1500 : 8000;
+
+            if (!p.Done.Wait(waitMs))
             {
-                p.Response = "{\"ok\":false,\"error\":\"主线程 8 秒内没响应（编辑器卡住 / 正在编译 / 正在导入）\"}";
+                p.Response = "{\"ok\":false,\"busy\":" + B(busy) + ",\"error\":\"主线程 " + (waitMs / 1000) +
+                             " 秒内没响应（编辑器卡住 / 正在编译 / 正在导入）\"}";
             }
             WriteResponse(ns, p.Response, p.ContentType);
         }
@@ -177,6 +263,9 @@ public static class DevBridge
 
     static void Pump()
     {
+        // EditorApplication.isCompiling / isUpdating 只能在主线程读，所以在这里存一份给后台线程用
+        editorBusy = EditorApplication.isCompiling || EditorApplication.isUpdating;
+
         Pending p;
         while (queue.TryDequeue(out p))
         {
@@ -199,15 +288,30 @@ public static class DevBridge
         {
             case "/":
             case "/help":
-                p.Response = "{\"ok\":true,\"endpoints\":[\"/ping\",\"/dump\",\"/log?n=40\",\"/play\",\"/stop\",\"/pause\"]}";
+                p.Response = "{\"ok\":true,\"endpoints\":[\"/ping\",\"/version\",\"/dump\",\"/log?n=40\",\"/play\",\"/stop\",\"/pause\",\"/restart\"]}";
                 return;
 
             case "/ping":
                 p.Response = "{\"ok\":true,\"unity\":" + J(Application.unityVersion) +
+                             ",\"bridge\":\"" + BridgeVersion + "\"" +
+                             ",\"port\":" + actualPort +
+                             ",\"running\":" + B(running) +
+                             ",\"lastError\":" + J(lastError ?? "") +
                              ",\"playing\":" + B(EditorApplication.isPlaying) +
                              ",\"paused\":" + B(EditorApplication.isPaused) +
                              ",\"compiling\":" + B(EditorApplication.isCompiling) +
+                             ",\"updating\":" + B(EditorApplication.isUpdating) +
                              ",\"scene\":" + J(SceneManager.GetActiveScene().name) + "}";
+                return;
+
+            case "/version":
+                p.Response = "{\"ok\":true,\"bridge\":\"" + BridgeVersion + "\",\"port\":" + actualPort +
+                             ",\"running\":" + B(running) + ",\"lastError\":" + J(lastError ?? "") + "}";
+                return;
+
+            case "/restart":
+                p.Response = "{\"ok\":true,\"note\":\"shutdown+start 已排队，约半秒后生效\"}";
+                EditorApplication.delayCall += () => { Shutdown(); Start(); };
                 return;
 
             case "/dump":
@@ -332,7 +436,9 @@ public static class DevBridge
             catch (Exception e) { if (sb.Length > 0 && sb[sb.Length - 1] == ',') sb.Length--; sb.Append("\"_err\":").Append(J(e.Message)); }
             sb.Append('}');
 
-            string extra = ExtraRuntime(c);
+            string extra = null;
+            try { extra = ExtraRuntime(c); }
+            catch (Exception e2) { extra = "{\"_err\":" + J(e2.GetType().Name) + "}"; }
             if (extra != null) sb.Append(",\"runtime\":").Append(extra);
 
             sb.Append('}');
@@ -381,6 +487,12 @@ public static class DevBridge
 
     static string PropValue(SerializedProperty p)
     {
+        try { return PropValueCore(p); }
+        catch (Exception ex) { return J("<unreadable:" + ex.GetType().Name + ">"); }
+    }
+
+    static string PropValueCore(SerializedProperty p)
+    {
         switch (p.propertyType)
         {
             case SerializedPropertyType.Float: return F(p.floatValue);
@@ -407,7 +519,9 @@ public static class DevBridge
             case SerializedPropertyType.Color:
                 return J(ColorUtility.ToHtmlStringRGBA(p.colorValue));
             case SerializedPropertyType.LayerMask:
-                return J(p.intValue.ToString(CultureInfo.InvariantCulture) + " (" + LayerMask.LayerToName(p.intValue) + ")");
+                int lm = p.intValue;
+                string lmName = (lm >= 0 && lm <= 31) ? LayerMask.LayerToName(lm) : "(all)";
+                return J(lm.ToString(CultureInfo.InvariantCulture) + " (" + lmName + ")");
             case SerializedPropertyType.Rect:
                 return "[" + F(p.rectValue.x) + "," + F(p.rectValue.y) + "," + F(p.rectValue.width) + "," + F(p.rectValue.height) + "]";
             default:
