@@ -23,6 +23,16 @@ public class PlayerController : MonoBehaviour
     [Header("材质")]
     public PhysicsMaterial2D wall;
     public PhysicsMaterial2D normal;
+    [Header("冲刺")]
+    public bool canDash;
+    public float dashSpeed=14;
+    public float dashTime=0.22f;
+    public float dashCooldown=0.4f;
+    private bool isDashing;
+    private float dashTimer;
+    private float cooldownTimer;
+    private int airDashCount;
+    private float gravityScale;
     private void Awake()
     {
         inputControl=new PlayerInputControl();
@@ -32,6 +42,8 @@ public class PlayerController : MonoBehaviour
         playerAnimation=GetComponent<PlayerAnimation>();
         inputControl.Gameplay.Jump.started+=Jump;
         inputControl.Gameplay.Attack.started+=PlayerAttack;
+        gravityScale=rb.gravityScale;
+        inputControl.Gameplay.Dash.started+=Dash;
     }
     private void OnEnable()
     {
@@ -48,6 +60,16 @@ public class PlayerController : MonoBehaviour
     }
     private void FixedUpdate()
     {
+        cooldownTimer-=Time.fixedDeltaTime;
+        if(physicsCheck.isGround&&!isDashing)
+        {
+            airDashCount=0;
+        }
+        if(isDashing)
+        {
+            DashMove();
+            return;
+        }
         if(!isHurt&&!isAttack)
             Move();
     }
@@ -61,6 +83,7 @@ public class PlayerController : MonoBehaviour
     }
     private void Jump(InputAction.CallbackContext obj)
     {
+        if(isDashing) return;
         if(physicsCheck.isGround)
             rb.AddForce(transform.up*jumpForce,ForceMode2D.Impulse);
     }
@@ -72,6 +95,7 @@ public class PlayerController : MonoBehaviour
     public void GetHurt(Transform attacker)
     {
         isHurt=true;
+        StopDash();
         rb.velocity=Vector2.zero;
         Vector2 dir=new Vector2((transform.position.x-attacker.position.x),0).normalized;
         rb.AddForce(dir*hurtForce,ForceMode2D.Impulse);
@@ -79,10 +103,43 @@ public class PlayerController : MonoBehaviour
     public void PlayerDead()
     {
         isDead=true;
+        StopDash();
         inputControl.Gameplay.Disable();
     }
     private void CheckState()
     {
         coll.sharedMaterial=physicsCheck.isGround?normal:wall;
+    }
+        public void UnlockDash()
+    {
+        canDash=true;
+    }
+    private void Dash(InputAction.CallbackContext context)
+    {
+        if(!canDash) return;
+        if(isDashing) return;
+        if(cooldownTimer>0) return;
+        if(!physicsCheck.isGround&&airDashCount>=1) return;
+        isDashing=true;
+        dashTimer=dashTime;
+        cooldownTimer=dashCooldown;
+        rb.gravityScale=0f;
+        if(!physicsCheck.isGround)
+            airDashCount++;
+    }
+    private void DashMove()
+    {
+        int faceDir=transform.localScale.x>=0?1:-1;
+        rb.velocity=new Vector2(faceDir*dashSpeed,0);
+        dashTimer-=Time.fixedDeltaTime;
+        if(dashTimer<=0)
+        {
+            StopDash();
+        }
+    }
+    private void StopDash()
+    {
+        isDashing=false;
+        rb.gravityScale=gravityScale;
     }
 }
