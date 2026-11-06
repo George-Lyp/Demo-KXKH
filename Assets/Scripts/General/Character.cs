@@ -15,6 +15,7 @@ public class Character : MonoBehaviour
     
     public float invulnerableCount; 
     [HideInInspector] public bool invulnerable;
+    private bool dead;
     public UnityEvent<Transform>OnTakeDamage;
     public UnityEvent OnDie;
     private void Update()
@@ -27,6 +28,10 @@ public class Character : MonoBehaviour
                 invulnerable=false;
             }
         }
+        if(!dead&&currentHealth<=0)
+        {
+            Die();
+        }
     }
     private void Start()
     {
@@ -34,19 +39,17 @@ public class Character : MonoBehaviour
     }
     public void TakeDamage(Attack attacker)
     {
-        if(currentHealth<=0) return;
+        if(dead) return;
         if(invulnerable) return;
-        if(currentHealth-attacker.damage>0)
-        {
-            currentHealth-=attacker.damage;
-            TriggerInvulnerable();
-            OnTakeDamage?.Invoke(attacker.transform);
-        }
-        else
+        currentHealth-=attacker.damage;
+        if(currentHealth<=0)
         {
             currentHealth=0;
-            OnDie?.Invoke();
+            Die();
+            return;
         }
+        TriggerInvulnerable();
+        OnTakeDamage?.Invoke(attacker.transform);
     }
     public void Heal(float amount)
     {
@@ -67,6 +70,12 @@ public class Character : MonoBehaviour
             invulnerable=true;
             invulnerableCount=invulnerableDuration;
         }
+    }
+    private void Die()
+    {
+        if(dead) return;
+        dead=true;
+        OnDie?.Invoke();
     }
 }
 

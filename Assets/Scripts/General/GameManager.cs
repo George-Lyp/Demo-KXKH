@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.SceneManagement;
+using System.Collections;
 
 public class GameManager : MonoBehaviour
 {
@@ -9,6 +10,7 @@ public class GameManager : MonoBehaviour
     public Image diamondCountImage;
     public Sprite[] digitSprites;
     public Door door;
+    public GameObject winPanel;
     private int diamondCount;
     private void Awake()
     {
@@ -47,5 +49,24 @@ public class GameManager : MonoBehaviour
     public void Respawn()
     {
         SceneManager.LoadScene(SceneManager.GetActiveScene().name);
+    }
+    public void Win()
+    {
+        StartCoroutine(ShowWinPanel());
+    }
+    private IEnumerator ShowWinPanel()
+    {
+        yield return new WaitForSecondsRealtime(1.2f);
+        if(winPanel != null)
+        {
+            winPanel.SetActive(true);
+        }
+        Time.timeScale = 0f;
+    }
+    public void Restart()
+    {
+        Time.timeScale = 1f;
+        PlayerController.dashUnlocked = false;
+        SceneManager.LoadScene("1");
     }
 }

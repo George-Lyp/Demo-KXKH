@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using Cinemachine;
@@ -41,7 +42,9 @@ public class Enemy : MonoBehaviour
     }
     private void Update()
     {
-        faceDir=new Vector3(transform.localScale.x,0,0);
+        if(isDead) return;
+        if(Mathf.Abs(transform.localScale.x)>1) faceDir=new Vector3(-transform.localScale.x,0,0);
+        else faceDir=new Vector3(transform.localScale.x,0,0);
         currentState.LogicUpdate();
         TimeCounter();
     }
@@ -58,7 +61,13 @@ public class Enemy : MonoBehaviour
     }
     public virtual void Move()
     {
-        rb.velocity=new Vector2(currentSpeed*faceDir.x,rb.velocity.y);
+        rb.velocity=new Vector2(currentSpeed*Math.Sign(faceDir.x),rb.velocity.y);
+    }
+    public void SwitchState(BaseState newState)
+    {
+        currentState.OnExit();
+        currentState=newState;
+        currentState.OnEnter(this);
     }
     public void TimeCounter()
     {
@@ -69,7 +78,7 @@ public class Enemy : MonoBehaviour
             {
                 wait=false;
                 waitTimeCounter=waitTime;
-                transform.localScale=new Vector3(-faceDir.x,1,1);
+                transform.localScale=new Vector3(-faceDir.x,transform.localScale.y,1);
                 physicsCheck.bottomOffset.x=-physicsCheck.bottomOffset.x;
             }
         }
@@ -77,15 +86,25 @@ public class Enemy : MonoBehaviour
     public void OnTakeDamage(Transform attackTrans)
     {
         attacker=attackTrans;
-        if(attacker.transform.position.x-transform.position.x>0) 
+        if(attacker.transform.position.x-transform.position.x>0&&Mathf.Abs(transform.localScale.x)<=1) 
         {
-            physicsCheck.bottomOffset.x=(faceDir.x==1)?physicsCheck.bottomOffset.x:-physicsCheck.bottomOffset.x;
-            transform.localScale=new Vector3(1,1,1);
+            physicsCheck.bottomOffset.x=(faceDir.x==Math.Abs(transform.localScale.x))?physicsCheck.bottomOffset.x:-physicsCheck.bottomOffset.x;
+            transform.localScale=new Vector3(Math.Abs(transform.localScale.x),transform.localScale.y,1);
         }
-        if(attacker.transform.position.x-transform.position.x<0) 
+        if(attacker.transform.position.x-transform.position.x<0&&Mathf.Abs(transform.localScale.x)<=1) 
         {
-            physicsCheck.bottomOffset.x=(faceDir.x==-1)?physicsCheck.bottomOffset.x:-physicsCheck.bottomOffset.x;
-            transform.localScale=new Vector3(-1,1,1);
+            physicsCheck.bottomOffset.x=(faceDir.x==-Math.Abs(transform.localScale.x))?physicsCheck.bottomOffset.x:-physicsCheck.bottomOffset.x;
+            transform.localScale=new Vector3(-Math.Abs(transform.localScale.x),transform.localScale.y,1);
+        }
+        if(attacker.transform.position.x-transform.position.x<0&&Mathf.Abs(transform.localScale.x)>1) 
+        {
+            //physicsCheck.bottomOffset.x=(faceDir.x==Math.Abs(transform.localScale.x))?physicsCheck.bottomOffset.x:-physicsCheck.bottomOffset.x;
+            transform.localScale=new Vector3(Math.Abs(transform.localScale.x),transform.localScale.y,1);
+        }
+        if(attacker.transform.position.x-transform.position.x>0&&Mathf.Abs(transform.localScale.x)>1) 
+        {
+            //physicsCheck.bottomOffset.x=(faceDir.x==-Math.Abs(transform.localScale.x))?physicsCheck.bottomOffset.x:-physicsCheck.bottomOffset.x;
+            transform.localScale=new Vector3(-Math.Abs(transform.localScale.x),transform.localScale.y,1);
         }
         isHurt=true;
         anim.SetTrigger("hurt");

@@ -24,6 +24,7 @@ public class PlayerController : MonoBehaviour
     public PhysicsMaterial2D normal;
     [Header("冲刺")]
     public bool canDash;
+    public static bool dashUnlocked;
     public float dashSpeed=14;
     public float dashTime=0.22f;
     public float dashCooldown=0.4f;
@@ -51,6 +52,7 @@ public class PlayerController : MonoBehaviour
         inputControl.Gameplay.Attack.started+=PlayerAttack;
         gravityScale=rb.gravityScale;
         inputControl.Gameplay.Dash.started+=Dash;
+        canDash=dashUnlocked;
     }
     private void OnEnable()
     {
@@ -131,6 +133,7 @@ public class PlayerController : MonoBehaviour
     }
     public void UnlockDash()
     {
+        dashUnlocked=true;
         canDash=true;
     }
     private void Dash(InputAction.CallbackContext context)
