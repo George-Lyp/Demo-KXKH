@@ -1,7 +1,6 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
-//using UnityEditor;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -33,6 +32,14 @@ public class PlayerController : MonoBehaviour
     private float cooldownTimer;
     private int airDashCount;
     private float gravityScale;
+    [Header("冲刺残影")]
+    public Color ghostColor=new Color(0.6f,0.9f,1f,0.45f);
+    public float ghostInterval=0.04f;
+    private float ghostTimer;
+    [Header("死亡重生")]
+    public float deathY=-20;
+    public float respawnDelay=1.5f;
+    private bool respawning;
     private void Awake()
     {
         inputControl=new PlayerInputControl();
@@ -57,9 +64,14 @@ public class PlayerController : MonoBehaviour
     {
         inputDirection=inputControl.Gameplay.Move.ReadValue<Vector2>();
         CheckState();
+        if(!isDead&&transform.position.y<deathY)
+        {
+            PlayerDead();
+        }
     }
     private void FixedUpdate()
     {
+        if(isDead) return;
         cooldownTimer-=Time.fixedDeltaTime;
         if(physicsCheck.isGround&&!isDashing)
         {
@@ -102,15 +114,22 @@ public class PlayerController : MonoBehaviour
     }
     public void PlayerDead()
     {
+        if(isDead) return;
         isDead=true;
         StopDash();
         inputControl.Gameplay.Disable();
+        StartCoroutine(RespawnAfterDelay());
+    }
+    private IEnumerator RespawnAfterDelay()
+    {
+        yield return new WaitForSeconds(respawnDelay);
+        GameManager.Instance.Respawn();
     }
     private void CheckState()
     {
         coll.sharedMaterial=physicsCheck.isGround?normal:wall;
     }
-        public void UnlockDash()
+    public void UnlockDash()
     {
         canDash=true;
     }
@@ -123,7 +142,8 @@ public class PlayerController : MonoBehaviour
         isDashing=true;
         dashTimer=dashTime;
         cooldownTimer=dashCooldown;
-        rb.gravityScale=0f;
+        ghostTimer=0;
+        rb.gravityScale=0;
         if(!physicsCheck.isGround)
             airDashCount++;
     }
@@ -132,6 +152,12 @@ public class PlayerController : MonoBehaviour
         int faceDir=transform.localScale.x>=0?1:-1;
         rb.velocity=new Vector2(faceDir*dashSpeed,0);
         dashTimer-=Time.fixedDeltaTime;
+        ghostTimer-=Time.fixedDeltaTime;
+        if(ghostTimer<=0)
+        {
+            ghostTimer=ghostInterval;
+            SpawnGhost();
+        }
         if(dashTimer<=0)
         {
             StopDash();
@@ -141,5 +167,22 @@ public class PlayerController : MonoBehaviour
     {
         isDashing=false;
         rb.gravityScale=gravityScale;
+    }
+    private void SpawnGhost()
+    {
+        SpriteRenderer self=GetComponent<SpriteRenderer>();
+        GameObject ghost=new GameObject("DashGhost");
+        ghost.transform.position=transform.position;
+        ghost.transform.localScale=transform.localScale;
+
+        SpriteRenderer sr=ghost.AddComponent<SpriteRenderer>();
+        sr.sprite=self.sprite;
+        sr.flipX=self.flipX;
+        sr.flipY=self.flipY;
+        sr.sortingLayerName=self.sortingLayerName;
+        sr.sortingOrder=self.sortingOrder-1;
+        sr.color=ghostColor;
+
+        ghost.AddComponent<DashGhost>();
     }
 }

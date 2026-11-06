@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.SceneManagement;
 
 public class GameManager : MonoBehaviour
 {
@@ -7,7 +8,7 @@ public class GameManager : MonoBehaviour
     public int totalDiamonds = 4;
     public Image diamondCountImage;
     public Sprite[] digitSprites;
-    public GameObject door;
+    public Door door;
     private int diamondCount;
     private void Awake()
     {
@@ -41,9 +42,10 @@ public class GameManager : MonoBehaviour
     }
     private void OpenDoor()
     {
-        if(door != null)
-        {
-            door.SetActive(false);
-        }
+        door.Unlock();       
+    }
+    public void Respawn()
+    {
+        SceneManager.LoadScene(SceneManager.GetActiveScene().name);
     }
 }

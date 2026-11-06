@@ -6,23 +6,27 @@ using UnityEngine;
 
 public class Enemy : MonoBehaviour
 {
-    protected Animator anim;
+    [HideInInspector] public Animator anim;
     Rigidbody2D rb;
-    PhysicsCheck physicsCheck;
+    [HideInInspector] public PhysicsCheck physicsCheck;
     public Transform attacker;
     [Header("基本参数")]
     public float normalSpeed;
     public float chaseSpeed;
     public float currentSpeed;
     public float hurtForce;
-    public Vector3 faceDir;
+    [HideInInspector] public Vector3 faceDir;
     [Header("计时器")]
     public float waitTime;
     public float waitTimeCounter;
     public bool wait;
     [HideInInspector] public bool isHurt;
     [HideInInspector] public bool isDead;
-    private void Awake()
+
+    private BaseState currentState;
+    protected BaseState patrolState;
+    protected BaseState chaseState;
+    protected virtual void Awake()
     {
         anim=GetComponent<Animator>();
         rb=GetComponent<Rigidbody2D>();
@@ -30,31 +34,27 @@ public class Enemy : MonoBehaviour
         currentSpeed=normalSpeed;
         waitTimeCounter=waitTime;
     }
-
+    private void OnEnable()
+    {
+        currentState=patrolState;
+        currentState.OnEnter(this);
+    }
     private void Update()
     {
         faceDir=new Vector3(transform.localScale.x,0,0);
-        if((physicsCheck.touchLeftWall&&faceDir.x<0)||(physicsCheck.touchRightWall&&faceDir.x>0))
-        {
-            wait=true;
-            anim.SetBool("run",false);
-        }
-        if(!physicsCheck.isGround) 
-        {
-            wait=true;
-            anim.SetBool("run",false);
-        }
+        currentState.LogicUpdate();
         TimeCounter();
     }
     private void FixedUpdate()
     {
-        if(wait)
-        {
-            rb.velocity=new Vector2(0,rb.velocity.y);
-            return;
-        }
-        if(isHurt||isDead) return;
+        if(isHurt||isDead||wait) return;
         Move();
+        anim.SetBool("run",true);
+        currentState.PhysicsUpdate();
+    }
+    private void OnDisable()
+    {
+        currentState.OnExit();
     }
     public virtual void Move()
     {

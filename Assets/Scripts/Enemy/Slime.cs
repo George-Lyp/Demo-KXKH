@@ -5,9 +5,9 @@ using UnityEngine.Scripting.APIUpdating;
 
 public class Slime : Enemy
 {
-    public override void Move()
+    protected override void Awake()
     {
-        base.Move();
-        anim.SetBool("run",true);
+        base.Awake();
+        patrolState=new SlimePatrolState();
     }
 }

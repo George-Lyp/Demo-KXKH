@@ -48,6 +48,18 @@ public class Character : MonoBehaviour
             OnDie?.Invoke();
         }
     }
+    public void Heal(float amount)
+    {
+        if(currentHealth<=0) return;
+
+        currentHealth=Mathf.Min(currentHealth+amount,maxHealth);
+    }
+    public void HealToMax()
+    {
+        if(currentHealth<=0) return;
+
+        currentHealth=maxHealth;
+    }
     private void TriggerInvulnerable()
     {
         if(!invulnerable)

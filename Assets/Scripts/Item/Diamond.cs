@@ -13,23 +13,20 @@ public class Diamond : MonoBehaviour
 
     private void OnTriggerEnter2D(Collider2D other)
     {
-        // 只认玩家，且只收一次
         if(collected)
         {
             return;
         }
-
         if(!other.CompareTag("Player"))
         {
             return;
         }
-
         collected = true;
         GameManager.Instance.AddDiamond();
+        Character character = other.GetComponent<Character>();
+        character.HealToMax();
         anim.SetTrigger("hit");
     }
-
-    // 由 Hit 动画最后一帧的 Animation Event 调用
     public void DestroySelf()
     {
         Destroy(gameObject);
